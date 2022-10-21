@@ -7,7 +7,7 @@ using std::endl;
 
 int main(int argc, char* argv[])
 {
-    cout << "Client" << endl;
+    cout << "Server single threaded" << endl;
 
     return 0;
 }
