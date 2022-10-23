@@ -10,10 +10,6 @@
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 
-#define BUFFER_SIZE 1024*1024
-
-unsigned long long bytes_sent =0;
-
 using std::cout;
 using std::cerr;
 using std::endl;
@@ -25,6 +21,11 @@ using asio::use_awaitable;
 using asio::co_spawn;
 using asio::detached;
 
+
+#define BUFFER_SIZE 1024*1024
+
+unsigned long long bytes_sent =0;
+unsigned long long bytes_received =0;
 
 class Client
 {
@@ -53,7 +54,7 @@ private:
         char buf[BUFFER_SIZE];
 
         for (;;)
-            co_await _sock.async_write_some(asio::buffer(buf, BUFFER_SIZE), use_awaitable);
+            bytes_sent += co_await _sock.async_write_some(asio::buffer(buf, BUFFER_SIZE), use_awaitable);
     }
 
     awaitable<void> _receiver_loop()
@@ -61,7 +62,7 @@ private:
         char buf[BUFFER_SIZE];
 
         for (;;)
-            co_await _sock.async_read_some(asio::buffer(buf, BUFFER_SIZE), use_awaitable);
+            bytes_received += co_await _sock.async_read_some(asio::buffer(buf, BUFFER_SIZE), use_awaitable);
     }
 
     awaitable<void> _stats()
@@ -73,8 +74,39 @@ private:
             timer.expires_from_now(asio::chrono::seconds(1));
             co_await timer.async_wait(use_awaitable);
 
-            cout << "Sent " << bytes_sent << " bytes" << endl;
-            bytes_sent =0; 
+            cout << "Up: ";
+
+            if (bytes_sent * 8 > 1024*1024*1024)
+                cout << ((double)bytes_sent*8)/(1024*1024*1024) << " Gb/s";
+
+            else if (bytes_sent * 8 > 1024*1024)
+                cout << ((double)bytes_sent*8)/(1024*1024) << " Mb/s";
+
+            else if (bytes_sent * 8 > 1024)
+                cout << ((double)bytes_sent*8)/(1024) << " Kb/s";
+
+            else
+                cout << ((double)bytes_sent*8) << " b/s";
+
+            cout << " | ";
+            cout << "Down: ";
+
+            if (bytes_received * 8 > 1024*1024*1024)
+                cout << ((double)bytes_received*8)/(1024*1024*1024) << " Gb/s";
+
+            else if (bytes_received * 8 > 1024*1024)
+                cout << ((double)bytes_received*8)/(1024*1024) << " Mb/s";
+
+            else if (bytes_received * 8 > 1024)
+                cout << ((double)bytes_received*8)/(1024) << " Kb/s";
+
+            else
+                cout << ((double)bytes_received*8) << " b/s";
+
+            cout << endl;
+
+            bytes_sent =0;
+            bytes_received =0; 
         }
     }
 
