@@ -8,5 +8,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20")
 add_link_options(-fsanitize=address)
 
 add_executable(server_single server_single_threaded.cpp)
-add_executable(server_multi server_multi_threaded.cpp)
+add_executable(server_one_to_one server_one_to_one.cpp)
+add_executable(server_thread_pool server_thread_pool.cpp)
 add_executable(client client.cpp)

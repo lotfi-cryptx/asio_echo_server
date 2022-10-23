@@ -7,7 +7,7 @@ using std::endl;
 
 int main(int argc, char* argv[])
 {
-    cout << "Server multi threaded" << endl;
+    cout << "Server one to one threading" << endl;
 
     return 0;
 }
