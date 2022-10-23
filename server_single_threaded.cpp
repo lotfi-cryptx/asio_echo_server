@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include <asio/io_context.hpp>
+#include <asio.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/ip/tcp.hpp>
 #include <asio/buffer.hpp>
@@ -24,23 +25,73 @@ using asio::detached;
 
 unsigned long long bytes_transfered =0;
 
-class Client
+class Client: public std::enable_shared_from_this<Client>
 {
 public:
-    Client(asio::io_context& ioc, tcp::socket sock):
-        _ioc(ioc),
-        _sock(std::move(sock))
-    {}
 
-    Client(Client&) = delete;
-    Client(Client&&) = delete; 
+    static std::shared_ptr<Client> create(asio::io_context& ioc, tcp::socket sock)
+    {
+        return std::shared_ptr<Client>(new Client(ioc, std::move(sock)));
+    }
 
-    ~Client() {}
+    ~Client()
+    {
+        cout << "[" << _ep << "]";
+        cout << " Connection closed" << endl;
+    }
 
     void start()
     {
-        co_spawn(_ioc, _echo_loop(), detached);
+        auto self(shared_from_this());
+
+        co_spawn(_ioc,
+                 _echo_loop(),
+                 [self, this] (std::exception_ptr exp)
+                 {
+                    this->_sock.close();
+                    
+                    try
+                    {
+                        if (exp)
+                            std::rethrow_exception(exp);
+
+                    }
+                    catch (const asio::system_error& e)
+                    {
+                        if (e.code() == asio::error::eof)
+                            return;
+                        
+                        if (e.code() == asio::error::connection_reset)
+                            return;
+
+                        cerr << "[" << this->_ep << "]";
+                        cerr << " Connection error: ";
+                        cerr << e.what() << endl;
+
+                    }
+                    catch(const std::exception& e)
+                    {
+                        cerr << "[" << this->_ep << "]";
+                        cerr << " Caught exception: ";
+                        cerr << e.what() << endl;
+                    }
+                 });
     }
+
+
+private:
+    Client(asio::io_context& ioc, tcp::socket sock):
+        _ioc(ioc),
+        _sock(std::move(sock)),
+        _ep(_sock.remote_endpoint())
+    {
+        cout << "[" << _ep << "]";
+        cout << " Connection created" << endl;
+    }
+
+    Client(Client&) = delete;
+    Client(Client&&) = delete;
+
 
 private:
     awaitable<void> _echo_loop()
@@ -66,7 +117,9 @@ private:
 private:
     asio::io_context& _ioc;
     tcp::socket _sock;
+    tcp::endpoint _ep;
 };
+
 
 
 class Server
@@ -83,25 +136,60 @@ public:
 
     void start()
     {
-        co_spawn(_ioc, _listen(), detached);
-        co_spawn(_ioc, _stats(), detached);
+        co_spawn(_ioc,
+                 _listen(),
+                 [this](std::exception_ptr exp)
+                 {
+                    try
+                    {
+                        if (exp)
+                            std::rethrow_exception(exp);
+
+                    }catch (const std::exception& e)
+                    {
+                        cerr << "Caught exception on _listen: " << e.what() << endl;
+                    }
+
+                    this->stop();
+                 });
+
+        co_spawn(_ioc,
+                 _stats(),
+                 [this](std::exception_ptr exp)
+                 {
+                    try
+                    {
+                        if (exp)
+                            std::rethrow_exception(exp);
+
+                    }catch (const std::exception& e)
+                    {
+                        cerr << "Caught exception on _stats: " << e.what() << endl;
+                    }
+
+                    this->stop();
+                 });
 
         _ioc.run();
     }
 
-    void stop() {}
+    void stop()
+    {
+        cout << "Stopping server's event loop" << endl;
+        _ioc.stop();
+    }
+
 
 public:
     awaitable<void> _listen()
     {
+        cout << "Started listening on " << _acceptor.local_endpoint() << endl;
+
         for (;;)
         {
             auto client_sock = co_await _acceptor.async_accept(use_awaitable);
-        
-            cout << "New connection from " << client_sock.remote_endpoint() << endl;
 
-            auto client = new Client(_ioc, std::move(client_sock));
-            client->start();
+            Client::create(_ioc, std::move(client_sock))->start();
         }
     }
 
@@ -113,8 +201,23 @@ public:
         {
             timer.expires_from_now(asio::chrono::seconds(1));
             co_await timer.async_wait(use_awaitable);
-        
-            cout << "Bytes_transferred: " << bytes_transfered << endl;
+
+            cout << "Throughput: ";
+
+            if (bytes_transfered * 8 > 1024*1024*1024)
+                cout << ((double)bytes_transfered*8)/(1024*1024*1024) << " Gb/s";
+
+            else if (bytes_transfered * 8 > 1024*1024)
+                cout << ((double)bytes_transfered*8)/(1024*1024) << " Mb/s";
+
+            else if (bytes_transfered * 8 > 1024)
+                cout << ((double)bytes_transfered*8)/(1024) << " Kb/s";
+
+            else
+                cout << ((double)bytes_transfered*8) << " b/s";
+
+            cout << endl;
+
             bytes_transfered =0;
         }
     }
@@ -128,7 +231,6 @@ private:
 int main(int argc, char* argv[])
 {
     Server server(1337);
-
     server.start();
 
     return 0;
