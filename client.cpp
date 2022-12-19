@@ -22,7 +22,7 @@ using asio::co_spawn;
 using asio::detached;
 
 
-#define BUFFER_SIZE 1024*1024
+#define BUFFER_SIZE 128*1024*1024
 
 unsigned long long bytes_sent =0;
 unsigned long long bytes_received =0;
